@@ -31,3 +31,6 @@ Desktop.ini
 
 # Logs
 *.log
+
+# Agent logs and temporary preview directories
+.agents/
