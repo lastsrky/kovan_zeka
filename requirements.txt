@@ -12,3 +12,4 @@ pypdf>=5.0.0
 # pyrealsense2
 # pycuda
 # tensorrt
+pygame>=2.5.0

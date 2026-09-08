@@ -97,10 +97,20 @@ def main():
     lm_scale_ending = float(spd.get("lm_scale_ending", 0.85))
     sent_throttle = 0.0
 
-    cam = RealSenseCamera(cfg["camera"])
+    if os.environ.get("SIMULATION_MODE") == "1":
+        import sys
+        sys.path.append(os.path.join(os.path.dirname(__file__), "..", "simulasyon"))
+        from sanal_kamera import SanalKamera
+        from sanal_motor import SanalMotor
+        cam = SanalKamera(cfg["camera"])
+        motor = SanalMotor(cfg["motor"])
+        print("[main] SIMULASYON MODU AKTIF")
+    else:
+        cam = RealSenseCamera(cfg["camera"])
+        motor = create_motor(cfg["motor"], use_dummy=args.dummy)
+        
     detector = LineDetector(cfg["vision"])
     pid = PIDController(cfg["controller"])
-    motor = create_motor(cfg["motor"], use_dummy=args.dummy)
     overtake = OvertakeController(
         cfg.get("overtake", {}),
         lane_half_width_px=float(cfg["vision"].get("lane_half_width_px", 232)))
