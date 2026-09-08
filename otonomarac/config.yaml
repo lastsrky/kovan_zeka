@@ -1,0 +1,193 @@
+# kamera
+camera:
+  width: 640
+  height: 480
+  fps: 30
+  crop_top_ratio: 0.2917
+  auto_exposure: true
+  exposure_value: 300
+  gain: 16
+  enable_depth: true
+
+# serit tespiti
+vision:
+  threshold_mode: binary
+  adaptive_block_size: 51
+  adaptive_C: -20
+  binary_thresh: 150
+  blur_ksize: 5
+  morph_kernel_w: 3
+  morph_kernel_h: 55
+  morph_iterations: 2
+  roi_top_ratio: 0.17
+  roi_bottom_ratio: 0.54
+  select_single_line: true
+  min_component_area: 250
+  line_select_mode: lane_center
+  lane_half_width_px: 232
+  min_pixels: 300
+  poly_degree: 2
+  reject_folded_fit: true
+  lookahead_ratio: 0.55
+  memory_frames: 12
+  min_line_height_ratio: 0.35
+  max_component_fill: 0.8
+  max_line_jump_px: 120
+  require_roi_span: false
+  span_tolerance_ratio: 0.12
+  max_fold_backtrack_px: 20.0
+  max_deviation_step: 0.25
+  offset_learn_rate: 0.2
+  max_row_width_px: 0
+  roi_trapezoid: false
+  roi_top_width_ratio: 0.75
+  roi_bottom_width_ratio: 1.0
+  roi_center_ratio: 0.5
+  image_center_offset_px: 6.9
+  deviation_smoothing: 0.4
+  corner_direct_threshold: 0.6
+  corner_frames: 3
+  horizontal_turn: 0.9
+  corner_direct_enable: false
+  corner_exit_frames: 25
+  corner_max_hold: 150
+  corner_slope_threshold: 1.0
+  corner_exit_slope: 0.4
+  corner_trigger_frames: 3
+  corner_exit_center_frac: 0.15
+  corner_fixed_direction: left
+  corner_enable: false
+  corner_lm_trigger: 3
+  corner_slope_min: 0.5
+  corner_exit_found: 3
+  corner_max_frames: 60
+
+# PID
+controller:
+  kp: 0.9
+  ki: 0.0
+  kd: 0.1
+  integral_limit: 1.0
+  output_limit: 1.0
+
+# motor / servo
+motor:
+  port: /dev/ttyUSB0
+  baud: 115200
+  steering_center: 110
+  steering_max_delta: 35
+  steering_invert: false
+  throttle_max_pwm: 300
+  min_send_interval_ms: 50
+  connect_timeout_s: 2.0
+
+# calistirma
+run:
+  default_throttle: 0.0
+  start_throttle: 0.3
+  debug: true
+
+# trafik isigi
+trafik:
+  enable: true
+  ust_bant: 0.60
+  hue_bantlari:
+  - [0, 10]
+  - [150, 180]
+  s_min: 60
+  v_min: 150
+  area_min: 100
+  area_max: 3000
+  max_aspect: 2.0
+  max_mesafe_cm: 90.0
+  depth_yoksa_kabul: false
+  dur_frames: 3
+  gecikme_s: 0.5
+  gec_frames: 25
+  yesil_bantlari:
+  - [35, 90]
+  yesil_s_min: 60
+  yesil_v_min: 120
+  yesil_area_min: 100
+  yesil_x_tol_px: 90
+  kilit_tol_px: 80
+  max_dur_s: 0.0
+  once: true
+
+# tabela tespiti
+tabela:
+  enable: true
+  conf_thresh: 0.5
+  period: 12
+  min_area_px: 400
+
+# yaya gecidi
+yaya:
+  enable: true
+  dur_mesafe_cm: 100.0
+  trigger_frames: 3
+  gecikme_s: 0.0
+  dur_s: 3.0
+  gec_s: 3.0
+  gec_pwm: 85
+  once: true
+
+# park
+park:
+  enable: true
+  tabela_mesafe_cm: 110.0
+  tabela_min_area_px: 400
+  trigger_frames: 3
+  dur_mesafe_cm: 25.0
+  park_pwm: 80
+  park_k: 0.125
+  red_kayip_frames: 5
+  ust_kirp: 0.25
+  red_area_min: 300
+  varsayilan_renk: RED
+  zemin_min_cm: 25.0
+  zemin_max_cm: 350.0
+
+# MQTT renk + basla
+colorlink:
+  enable: true
+  broker: 10.50.58.31
+  port: 1883
+  topic: robot/veri
+  extra_topics:
+  - robot/basla
+  - arac/yuk
+  field: renk
+  client_id: araba-main
+  keepalive: 60
+  require_for_start: false
+  auto_start: true
+  ignore_retained: true
+  verbose: true
+
+# sollama
+overtake:
+  enable: true
+  trigger_distance_cm: 110.0
+  max_distance_cm: 200.0
+  trigger_frames: 2
+  lane_shift_px: 464.0
+  shift_ramp_px: 40.0
+  release_ramp_px: 60.0
+  switch_jump_px: 232.0
+  min_transition_s: 0.4
+  max_transition_s: 2.5
+  settle_s: 0.6
+  throttle_scale: 0.8
+  once: true
+
+# hiz / gaz
+speed:
+  lm_scale_kayip4: 0.75
+  lm_scale_kayip2: 0.80
+  lm_scale_ending: 0.85
+  slope_deadzone: 0.9
+  speed_gain: 0.35
+  throttle_rate_down: 0.1
+  throttle_rate_up: 0.02
+  min_move_pwm: 80

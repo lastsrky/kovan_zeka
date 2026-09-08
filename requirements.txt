@@ -1,0 +1,14 @@
+# TEKNOFEST Akıllı Fabrika Sistemleri Bağımlılıkları
+opencv-python>=4.8.0
+numpy>=1.23.0
+paho-mqtt>=1.6.1
+pyserial>=3.5
+pyyaml>=6.0
+Pillow>=10.0.0
+pypdf>=5.0.0
+
+# Donanım / Geliştirme Kartı Spesifik Bağımlılıklar (Jetson / RealSense):
+# Not: Aşağıdaki paketler NVIDIA Jetson ve RealSense kamera takılı sistemlerde kurulmalıdır.
+# pyrealsense2
+# pycuda
+# tensorrt

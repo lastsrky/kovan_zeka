@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.class
+
+# Large binary files & archives (GitHub 100MB limit)
+# Note: otonomarac/tabelaguncel.engine (112MB) is kept locally and deployed directly to hardware.
+*.engine
+*.zip
+*.tar.gz
+*.rar
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE & Editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.BIN/
+.DS_Store
+
+# Logs
+*.log
