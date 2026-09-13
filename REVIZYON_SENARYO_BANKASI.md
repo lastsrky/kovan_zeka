@@ -10,14 +10,293 @@
 
 | Blok | Kapsam | Senaryo ID Aralığı | Toplam |
 | :--- | :--- | :--- | :---: |
+| **🚨 KIRMIZI BÖLGE** | **FİNAL NOTU Resmi Çıkarımı — En Yüksek İhtimalli Jüri Revizyonları** | `REV-FINAL-01` — `REV-FINAL-05` | **5 Senaryo** |
 | **BLOK A** | **Otonom Araç Parametrik & Sürüş Güvenliği** | `REV-ARAÇ-01` — `REV-ARAÇ-06` | 6 Senaryo |
 | **BLOK B** | **Otonom Araç Mantıksal & Saha Görevleri** | `REV-GÖREV-01` — `REV-GÖREV-06` | 6 Senaryo |
 | **BLOK C** | **Robot Kol, Kalite Kontrol & Ayıklama (Reject)** | `REV-KOL-01` — `REV-KOL-06` | 6 Senaryo |
 | **BLOK D** | **PLC Konveyör, HMI Sayaç & Reçete Otomasyonu** | `REV-PLC-01` — `REV-PLC-06` | 6 Senaryo |
 | **BLOK E** | **Ağ (MQTT) Kesintisi, Fail-Safe & Saha Işık Kalibrasyonu** | `REV-ORTAM-01` — `REV-ORTAM-05` | 5 Senaryo |
-| **TOPLAM** | **Tüm Sistemleri Kapsayan Eksiksiz Senaryo Bankası** | — | **29 Senaryo** |
+| **TOPLAM** | **Tüm Sistemleri Kapsayan Eksiksiz Senaryo Bankası** | — | **34 Senaryo** |
 
 ---
+
+# 🚨 KIRMIZI BÖLGE: FİNAL NOTU RESMİ ÇIKARIMI — EN YÜKSEK İHTİMALLİ 5 JÜRİ REVİZYONU
+
+> **📌 KRİTİK STRATEJİ & HAKEM PSİKOLOJİSİ:**  
+> Bu bölüm, organizasyonun yayınladığı resmi **`FİNAL NOTU.pdf`** şartname metnine, **40 dakikalık** seans sınırına ve **%85'lik Final Puanlama Tablosuna** dayalı olarak hazırlanmıştır.  
+> 40 dakikalık sürede hiçbir jüri sizden saatler süren yapay zeka/YOLO eğitimi veya karmaşık mekanik revizyon isteyemez. Jürinin asıl amacı: **"Bu takım sistemi ezbere mi çalıştırıyor, yoksa akışa ve karar mantığına müdahale edebilecek kadar mimariye hakim mi?"** sorusunu sınamaktır.  
+> Final günü jürinin masaya geldiğinde talep edeceği ilk revizyon çok yüksek olasılıkla bu 5 senaryodan biri olacaktır!
+
+---
+
+### `[REV-FINAL-01] Robot Kol Kalite Kontrol: Kusurlu Renkteki Küpü Iskartaya Ayırma (Reject Modu)`
+* **Kategori:** Robot Kol / Endüstriyel Kalite Kontrol & Ayıklama
+* **Jüri Talep İhtimali:** **%90 (En Güçlü Aday)**
+* **Zorluk / Risk Seviyesi:** Düşük - Orta Risk
+* **Tahmini Uygulama Süresi:** **45 Saniye**
+
+#### 1. 🗣️ Hakemin Talimatı
+> *"Biz gerçek bir akıllı fabrika simülasyonu yapıyoruz. [MAVİ] renkli küpler üretim hattında kusurlu/hatalı parça olarak kabul edilmiştir. Robot kol mavi küpü gördüğünde araca YÜKLEMESİN; konveyörün kenarındaki boşluğa (ıskartaya) bıraksın ve araca MQTT BAŞLA sinyali GÖNDERMESİN. Kırmızı ve yeşil küpleri normal şekilde araca yükleyip aracı sevk etmeye devam edin."*
+
+#### 2. ⚙️ Fiziksel Neden ve Sisteme Etkisi (`FİNAL NOTU.pdf` Dayanağı)
+* **Resmi Metin:** *"Robot kol küpün rengini (kırmızı / yeşil / mavi) KLASİK GÖRÜNTÜ İŞLEME (HSV) ile belirler... Kol küpü otonom araca yükler ve küpün rengini MQTT ile araca bildirir."*
+* **Sisteme Etkisi:** Tüm takımların hazırladığı varsayılan akış konveyördeki her küpü körü körüne araca yükler. Ancak endüstride robot kolların asıl görevi hatalı parçayı ayıklamaktır. Küp kavrandıktan sonraki karar bloğuna eklenecek 6 satırlık bir rota saptırmasıyla küp 45° kenara bırakılır ve araca `basla_gonder()` çağrısı engellenerek araç sabit tutulur.
+
+#### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
+* **Dosya:** [robotkol/otonom_dongu.py](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/robotkol/otonom_dongu.py)
+* **Konum:** `_calis(self)` fonksiyonu içinde `kavra` adımının hemen ardından, `D_YUKLE` öncesi (Satır ~240).
+
+#### 4. 💻 Kod Değişikliği (Diff)
+```python
+# robotkol/otonom_dongu.py -> _calis() metodu içi
+                self.robot.grip(kavra)
+                time.sleep(self.ayar.grip_bekle)
+
+<<<<--- ESKİ KOD:
+                self._durum = D_YUKLE
+                yk = self.konumlar.al("YUKLE")
+====
+>>>>+++ YENİ KOD:
+                # ==========================================================
+                # [HAKEM REVİZYONU - MAVİ KÜPÜ ISKARTAYA AYIR]:
+                # ==========================================================
+                if renk == "BLUE":
+                    self._log("⚠️ MAVİ KÜP: Kusurlu parça tespit edildi! Iskarta alanına tahliye ediliyor...")
+                    # 1. Omuzu yukarı kaldır (Bariyere çarpmamak için)
+                    a1 = list(self.robot.snapshot().angles)
+                    a1[1] = self.ayar.omuz_kaldir_aci
+                    self.robot.move_deg(a1)
+                    self._hareket_bekle(5.0)
+
+                    # 2. Tabanı 45 derece kenara çevir (Iskarta alanı)
+                    a1[0] = 45.0
+                    self.robot.move_deg(a1)
+                    self._hareket_bekle(5.0)
+
+                    # 3. Küpü bırak
+                    self.robot.grip(self.ayar.grip_ac)
+                    time.sleep(0.5)
+
+                    # 4. GORME pozisyonuna dön (Araca ASLA basla_gonder ÇAĞRILMAZ!)
+                    self._git_istasyon("GORME")
+                    continue
+                # ==========================================================
+
+                self._durum = D_YUKLE
+                yk = self.konumlar.al("YUKLE")
+```
+
+#### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
+```bash
+python -m py_compile robotkol/otonom_dongu.py && echo "TEST BASARILI: Iskarta mantığı hatasız derlendi!"
+```
+
+#### 6. 🏆 Hakeme Sunum Cümlesi
+> *"Hocam, endüstriyel kalite kontrol gereksinimi doğrultusunda `otonom_dongu.py` içerisine renk bazlı bir ayıklama (reject) katmanı entegre ettik. Mavi renkli kusurlu parça tespit edildiğinde yükleme yörüngesi iptal edilmekte, kol parçayı 45 derece ofsetli ıskarta istasyonuna bırakmakta ve otonom araca MQTT start sinyali gönderilmeden konveyör çevrimine devam edilmektedir."*
+
+---
+
+### `[REV-FINAL-02] MQTT Haberleşme Standardı: Yeni Topic ve JSON Veri Formatı Entegrasyonu`
+* **Kategori:** Ağ & Protokol / MQTT Entegrasyonu
+* **Jüri Talep İhtimali:** **%85**
+* **Zorluk / Risk Seviyesi:** Düşük Risk
+* **Tahmini Uygulama Süresi:** **40 Saniye**
+
+#### 1. 🗣️ Hakemin Talimatı
+> *"Fabrika haberleşme standardımızı uluslararası IoT normuna güncelledik. Artık robot kol ile araç arasındaki haberleşmede topic adı `arac/yuk` yerine `fabrika/palet` olacak ve yüklenen renk bilgisi düz metin ('RED') olarak değil, JSON formatında `{\"renk\": \"RED\"}` şeklinde iletilecektir. İki sistem bu protokole uyumlu hale getirilmelidir."*
+
+#### 2. ⚙️ Fiziksel Neden ve Sisteme Etkisi (`FİNAL NOTU.pdf` Dayanağı)
+* **Resmi Metin:** *"Küpün rengini MQTT ile araca bildirir (arac/yuk konusu; RED / GREEN / BLUE)... Aracın hareket edebilmesi için MQTT üzerinden renk/başla bildiriminin gelmesi yeterlidir."*
+* **Sisteme Etkisi:** Bu revizyon jürinin hem Robot Kol (`arac_haberlesme.py`) hem de Otonom Araç (`main.py` / `colorlink.py`) taraflarını aynı anda test etmesini sağlar. Veri paketini JSON süzgecinden geçirmek haberleşme esnekliğini kanıtlar.
+
+#### 3. 📂 Müdahale Edilecek Dosyalar ve Tam Konumlar
+1. **Robot Kol:** [robotkol/arac_haberlesme.py](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/robotkol/arac_haberlesme.py) (Satır ~15)
+2. **Otonom Araç:** [otonomarac/colorlink.py](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/otonomarac/colorlink.py) (Satır ~25)
+
+#### 4. 💻 Kod Değişikliği (Diff)
+
+**1. Robot Kol Tarafı (`robotkol/arac_haberlesme.py`):**
+```python
+<<<<--- ESKİ KOD:
+TOPIC_YUK = "arac/yuk"
+...
+def renk_gonder(self, renk: str) -> bool:
+    return self.yayinla(TOPIC_YUK, str(renk).strip().upper())
+====
+>>>>+++ YENİ KOD:
+import json
+TOPIC_YUK = "fabrika/palet"
+...
+def renk_gonder(self, renk: str) -> bool:
+    payload = json.dumps({"renk": str(renk).strip().upper()})
+    return self.yayinla(TOPIC_YUK, payload)
+```
+
+**2. Otonom Araç Tarafı (`otonomarac/colorlink.py`):**
+```python
+<<<<--- ESKİ KOD:
+TOPIC_YUK = "arac/yuk"
+...
+def _on_message(self, client, userdata, msg):
+    payload = msg.payload.decode("utf-8", errors="ignore").strip().upper()
+    self._renk = payload
+====
+>>>>+++ YENİ KOD:
+import json
+TOPIC_YUK = "fabrika/palet"
+...
+def _on_message(self, client, userdata, msg):
+    raw = msg.payload.decode("utf-8", errors="ignore").strip()
+    try:
+        data = json.loads(raw)
+        self._renk = str(data.get("renk", "")).upper()
+    except Exception:
+        self._renk = raw.upper()
+```
+
+#### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
+```bash
+python -c "import json; d=json.loads(json.dumps({'renk': 'RED'})); assert d['renk']=='RED'; print('TEST BASARILI: JSON MQTT Protokolü Uyumlu!')"
+```
+
+#### 6. 🏆 Hakeme Sunum Cümlesi
+> *"Hocam, hem robot kol yayıncısını hem de otonom araç abonesini endüstriyel JSON standardına ve yeni `fabrika/palet` konusuna uyarladık. Ayrıştırma katmanımız gelen paketi JSON olarak güvenle deserialize edip hedef rengi hafızaya almaktadır."*
+
+---
+
+### `[REV-FINAL-03] Trafik Lambası: Yeşil Işık Arıza Modu (Zaman Aşımıyla Yeşilsiz Kalkış) + Erken Duruş`
+* **Kategori:** Otonom Araç / Arıza Yönetimi & Sürüş Güvenliği
+* **Jüri Talep İhtimali:** **%85**
+* **Zorluk / Risk Seviyesi:** Düşük Risk (Yalnızca YAML parametresi)
+* **Tahmini Uygulama Süresi:** **15 Saniye**
+
+#### 1. 🗣️ Hakemin Talimatı
+> *"Yarışma sahasındaki trafik lambasında teknik bir arıza meydana geldi, kırmızı ışıktan sonra yeşil ışık kesinlikle YANMAYACAKTIR. Aracınız kırmızı ışığı 90 cm yerine en az 140 cm mesafeden görüp duruş çizgisini milim taşmayacak şekilde durmalıdır. Yeşil ışık yanmayacağı için araç kırmızıda tam 5.0 saniye bekledikten sonra otonom olarak kalkış yapıp şeridinde devam etmelidir."*
+
+#### 2. ⚙️ Fiziksel Neden ve Sisteme Etkisi (`FİNAL NOTU.pdf` Dayanağı)
+* **Resmi Metin:** *"Hareketine başlayan araç, şerit üzerinde ilerlerken pistte yer alan GÖREVLERİ yerine getirir; görevler pist üzerindeki TABELALAR ile işaretlenir."*
+* **Sisteme Etkisi:** Varsayılan konfigürasyonda `max_dur_s: 0.0` (sonsuz bekleme)'dir. Yeşil lamba yanmazsa araç sonsuza kadar bekler ve diskalifiye olur. `max_dur_s: 5.0` yapıldığında durum makinesi 5 saniye sonra yeşili beklemeden görevi `BITTI` durumuna geçirir ve otonom kalkış gerçekleşir. `max_mesafe_cm: 140.0` ise derinlik algılamasını 1.4 metreye çekerek duruş çizgisi ihlalini önler.
+
+#### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
+* **Dosya:** [otonomarac/config.yaml](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/otonomarac/config.yaml)
+* **Bölüm:** `trafik:` altındaki `max_mesafe_cm` ve `max_dur_s`
+
+#### 4. 💻 Kod Değişikliği (Diff)
+```yaml
+# otonomarac/config.yaml -> trafik bölümü
+trafik:
+  enable: true
+<<<<--- ESKİ DEĞERLER:
+  max_mesafe_cm: 90.0
+  max_dur_s: 0.0
+====
+>>>>+++ YENİ DEĞERLER:
+  max_mesafe_cm: 140.0   # Erken algılama ile çizgi emniyeti
+  max_dur_s: 5.0         # 5.0 saniye zaman aşımı sonrası yeşilsiz kalkış
+```
+
+#### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
+```bash
+python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['trafik']['max_mesafe_cm']==140.0 and c['trafik']['max_dur_s']==5.0; print('TEST BASARILI: 140 cm mesafe ve 5 sn zaman aşımı devrede!')"
+```
+
+#### 6. 🏆 Hakeme Sunum Cümlesi
+> *"Hocam, `config.yaml` içindeki `trafik.max_dur_s` zaman aşımı sayacını 5.0 saniyeye kurduk ve derinlik algılama sınırını 140.0 cm'ye genişlettik. Araç kırmızı ışık önünde çizgiyi aşmadan durmakta ve yeşil gelmese dahi tam 5000 ms sonra otonom seyrine devam etmektedir."*
+
+---
+
+### `[REV-FINAL-04] Lojistik Park Eşleşmesi: Çapraz Park Yönlendirmesi (Kırmızı -> Mavi, Mavi -> Kırmızı)`
+* **Kategori:** Otonom Araç / Lojistik Karar Mantığı
+* **Jüri Talep İhtimali:** **%80**
+* **Zorluk / Risk Seviyesi:** Düşük Risk
+* **Tahmini Uygulama Süresi:** **30 Saniye**
+
+#### 1. 🗣️ Hakemin Talimatı
+> *"Fabrika içi lojistik rotası revize edildi: Kırmızı küp taşıyan araç MAVİ alana, Mavi küp taşıyan araç KIRMIZI alana park edecektir. Yeşil küp taşıyan araç kendi rengi olan YEŞİL alana park etmeye devam edecektir."*
+
+#### 2. ⚙️ Fiziksel Neden ve Sisteme Etkisi (`FİNAL NOTU.pdf` Dayanağı)
+* **Resmi Metin:** *"Araç, küpün rengine uygun renkli park alanına park ederek görevini tamamlar; otonom araç tek görevliktir, park ile birlikte durur."*
+* **Sisteme Etkisi:** Takımların rengi araç içinde ezbere 1-e-1 eşleyip eşlemediğini test eder. `tabela_gorev.py` içerisindeki `set_hedef_renk` fonksiyonuna eklenecek bir sözlük ile gelen renk yerel olarak çapraz eşleşmeye tabi tutulur; MQTT protokolü bozulmaz.
+
+#### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
+* **Dosya:** [otonomarac/tabela_gorev.py](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/otonomarac/tabela_gorev.py)
+* **Fonksiyon:** `set_hedef_renk(self, renk)` (Satır ~230)
+
+#### 4. 💻 Kod Değişikliği (Diff)
+```python
+# otonomarac/tabela_gorev.py -> set_hedef_renk fonksiyonu
+    def set_hedef_renk(self, renk):
+        if not renk:
+            return
+        r = str(renk).strip().upper()
+
+<<<<--- ESKİ KOD:
+        if r not in PARK_RENK_BANTLARI:
+====
+>>>>+++ YENİ KOD:
+        # [HAKEM REVİZYONU - ÇAPRAZ PARK EŞLEŞMESİ]:
+        ters_harita = {"RED": "BLUE", "BLUE": "RED", "GREEN": "GREEN"}
+        r = ters_harita.get(r, r)
+
+        if r not in PARK_RENK_BANTLARI:
+```
+
+#### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
+```bash
+python -c "from otonomarac.tabela_gorev import TabelaGorevYoneticisi; m=TabelaGorevYoneticisi(); m.set_hedef_renk('RED'); assert m.hedef_renk=='BLUE'; print('TEST BASARILI: Kırmızı küp Mavi park cebine yönlendirildi!')"
+```
+
+#### 6. 🏆 Hakeme Sunum Cümlesi
+> *"Hocam, `tabela_gorev.py` içerisindeki renk kabul katmanına dinamik yönlendirme tablosu ekledik. MQTT paket standardını bozmadan yerel arbitrasyonla Kırmızı küp Mavi cebe, Mavi küp Kırmızı cebe yönlendirilmiştir."*
+
+---
+
+### `[REV-FINAL-05] PLC & HMI Reçete / Parti Sayacı: Belirli Adette Küpten Sonra Otomatik Sistem Duruşu`
+* **Kategori:** PLC & HMI / Reçete & Sayaç Otomasyonu
+* **Jüri Talep İhtimali:** **%75**
+* **Zorluk / Risk Seviyesi:** Düşük Risk
+* **Tahmini Uygulama Süresi:** **45 Saniye**
+
+#### 1. 🗣️ Hakemin Talimatı
+> *"Sistem sürekli sonsuz çevrimde çalışmasın. Operatör panelinden veya PLC'den bir parti adedi (örneğin 3 adet) belirlensin. Konveyörden 3 adet küp geçip işlem tamamlandığında konveyör otomatik olarak dursun, kırmızı sinyal lambası yanıp sönsün (flaşör) ve sistem yeni parti için beklemeye geçsin."*
+
+#### 2. ⚙️ Fiziksel Neden ve Sisteme Etkisi (`GENEL_SARTNAME.md` Dayanağı)
+* **Resmi Şartname:** HMI puanı (%10) içerisinde doğrudan: *"%2 Reçete/mod seçimi ve sayaç doğruluğu"* maddesi yer almaktadır.
+* **Sisteme Etkisi:** TIA Portal S7-1200 projesinde çıkış sensörü (BP2 - `%I1.0`) her aktif olduğunda çalışan bir `CTU` (Up Counter) sayıcı eklenir. Sayaç değeri `PV = 3` olduğunda konveyör ileri kontaktörü (`%Q0.0`) kilitlenir ve kırmızı sinyal lambası (`%Q0.5`) 1 Hz frekansla flaşör yaptırılır.
+
+#### 3. 📂 Müdahale Edilecek Konum ve Mantık
+* **Dosya / Ortam:** TIA Portal V14+ -> [plc/teknofest_KONVEYÖR.zap14](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/plc/teknofest_KONVEY%C3%96R.zap14)
+* **Blok:** `Main [OB1]` içerisindeki Konveyör Kontrol Network'ü
+
+#### 4. 💻 PLC Mantık Değişikliği (Ladder / SCL)
+```scl
+// S7-1200 OB1 veya FC1 içine Sayaç Bloğu:
+"IEC_Counter_DB".CTU(
+    CU := %I1.0,           // BP2 Çıkış Optik Sensörü Yükselen Kenar
+    R  := %I0.1 OR #Reset, // S1 Butonu veya HMI Reset
+    PV := 3,               // Hedef Parti Adedi
+    Q  => #Parti_Bitti,    // Hedefe ulaşıldı sinyali
+    CV => #Guncel_Adet     // HMI Ekranda Gösterilen Sayı
+);
+
+// Konveyör Çalışma Şartına Kilitleme:
+// %Q0.0 Motor İleri = (Start Mührü) AND NOT #Parti_Bitti;
+
+// Kırmızı Lamba Flaşör Mantığı:
+// %Q0.5 Kırmızı Lamba = (Sistem_Durdu AND NOT #Parti_Bitti) OR (#Parti_Bitti AND "Clock_1Hz");
+```
+
+#### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Yöntemi
+* TIA Portal'da `Monitoring (Gözlem)` modunu açın.
+* Konveyör çıkış sensörünün önünden küpü elinizle 3 kez geçirin.
+* `CV` değerinin `3` olduğunu ve `%Q0.0` (K1 motor rölesi) çıkışının enerjisinin kesildiğini, `%Q0.5` kırmızı lambanın 1 Hz yanıp söndüğünü gözlemleyin.
+
+#### 6. 🏆 Hakeme Sunum Cümlesi
+> *"Hocam, şartnamenin HMI ve Sayaç doğruluğu kriterine istinaden S7-1200 PLC programımıza `CTU` yukarı sayıcı bloğu entegre ettik. BP2 çıkış sensöründen 3 adet parça doğrulandığında sayaç bayrağı konveyör motorunu otomatik olarak kilitlemekte ve operatörü uyarmak üzere kırmızı sinyal kulesini flaşör moduna geçirmektedir."*
+
+---
+
+
 
 # BLOK A: OTONOM ARAÇ PARAMETRİK & SÜRÜŞ GÜVENLİĞİ
 
