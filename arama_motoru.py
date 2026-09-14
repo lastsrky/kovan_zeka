@@ -16,6 +16,7 @@ import sys
 import os
 import re
 import json
+import ast
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import webbrowser
@@ -127,10 +128,18 @@ class DocumentIndexer:
 
     def _get_tracked_files(self):
         files = {}
-        target_patterns = ["*.md", "*/*.md", "otonomarac/config.yaml"]
+        target_patterns = [
+            "*.md", "*/*.md",
+            "otonomarac/*.py", "otonomarac/*.yaml", "otonomarac/*.yml",
+            "robotkol/*.py",
+            "plc/*.py", "plc/*.yaml",
+            "simulasyon/*.py",
+            "simulator/*.py", "simulator/*/*.py",
+            "run_simulator.py", "simulasyon_baslat.py"
+        ]
         for pattern in target_patterns:
             for p in self.base_dir.glob(pattern):
-                if p.is_file() and "venv" not in p.parts and ".git" not in p.parts:
+                if p.is_file() and "venv" not in p.parts and ".git" not in p.parts and "__pycache__" not in p.parts:
                     try:
                         files[str(p)] = p.stat().st_mtime
                     except OSError:
@@ -142,7 +151,7 @@ class DocumentIndexer:
             self.reload()
 
     def reload(self):
-        """Tüm dökümanları tarar ve kartlara ayrıştırır."""
+        """Tüm dökümanları ve kaynak kodları tarar ve kartlara ayrıştırır."""
         items = []
         self._file_mtimes = self._get_tracked_files()
 
@@ -161,31 +170,43 @@ class DocumentIndexer:
             items.extend(self._parse_hakem_sorulari(hakem_file))
             handled_paths.add(str(hakem_file.resolve()))
 
-        # 3. KILAVUZ.md ve Diğer Tüm Markdown Dokümanları (Dinamik Keşif)
+        # 3. KILAVUZ.md ve Diğer Tüm Markdown Dokümanları + Kaynak Kodlar (Dinamik Keşif)
         for path_str in self._file_mtimes.keys():
             p = Path(path_str)
-            if str(p.resolve()) in handled_paths or p.suffix.lower() != ".md":
+            resolved = str(p.resolve())
+            if resolved in handled_paths:
                 continue
 
-            # Kategori belirleme
-            fname = p.name.lower()
-            if "kilavuz" in fname:
-                cat = "Kılavuz"
-            elif "sartname" in fname:
-                cat = "Şartname"
-            elif "hakem" in fname:
-                cat = "Hakem Soruları"
-            elif "revizyon" in fname:
-                cat = "Revizyon"
-            elif "project" in fname:
-                cat = "Proje Mimarisi"
-            elif "docs" in p.parts:
-                cat = "Dokümantasyon"
-            else:
-                cat = "Genel Bilgi"
+            # Markdown Dosyaları
+            if p.suffix.lower() == ".md":
+                fname = p.name.lower()
+                if "kilavuz" in fname:
+                    cat = "Kılavuz"
+                elif "sartname" in fname:
+                    cat = "Şartname"
+                elif "hakem" in fname:
+                    cat = "Hakem Soruları"
+                elif "revizyon" in fname:
+                    cat = "Revizyon"
+                elif "project" in fname:
+                    cat = "Proje Mimarisi"
+                elif "docs" in p.parts:
+                    cat = "Dokümantasyon"
+                else:
+                    cat = "Genel Bilgi"
 
-            items.extend(self._parse_generic_markdown(p, cat))
-            handled_paths.add(str(p.resolve()))
+                items.extend(self._parse_generic_markdown(p, cat))
+                handled_paths.add(resolved)
+
+            # Python Kaynak Kodları
+            elif p.suffix.lower() == ".py" and p.name != "arama_motoru.py":
+                items.extend(self._parse_python_source(p))
+                handled_paths.add(resolved)
+
+            # YAML Konfigürasyon Dosyaları
+            elif p.suffix.lower() in [".yaml", ".yml"]:
+                items.extend(self._parse_yaml_config(p))
+                handled_paths.add(resolved)
 
         self.items = items
 
@@ -342,6 +363,138 @@ class DocumentIndexer:
                 full_content=sec_clean
             )
             items.append(item)
+        return items
+
+    def _parse_python_source(self, path: Path):
+        items = []
+        try:
+            rel_path = str(path.relative_to(self.base_dir)).replace("\\", "/")
+            content = path.read_text(encoding="utf-8", errors="ignore")
+            lines = content.splitlines()
+        except Exception:
+            return items
+
+        # Kategori
+        if "otonomarac" in rel_path:
+            cat = "Kaynak Kod (Otonom Araç)"
+        elif "robotkol" in rel_path:
+            cat = "Kaynak Kod (Robot Kol)"
+        elif "plc" in rel_path:
+            cat = "Kaynak Kod (PLC)"
+        elif "simulator" in rel_path or "simulasyon" in rel_path:
+            cat = "Kaynak Kod (Simülatör)"
+        else:
+            cat = "Kaynak Kod"
+
+        # AST ile sınıfları ve fonksiyonları tara
+        try:
+            tree = ast.parse(content)
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    name = node.name
+                    if name.startswith("__") and name != "__init__":
+                        continue
+                    
+                    line_start = node.lineno
+                    line_end = getattr(node, "end_lineno", min(len(lines), line_start + 25))
+                    doc = ast.get_docstring(node) or ""
+                    
+                    snippet_lines = lines[line_start - 1 : min(line_end, line_start + 22)]
+                    snippet = "\n".join(snippet_lines)
+                    
+                    kind = "class" if isinstance(node, ast.ClassDef) else "def"
+                    title = f"{rel_path}: {kind} {name}"
+                    
+                    item = DocItem(
+                        item_id=f"CODE-{path.stem}-{name}-L{line_start}",
+                        title=title,
+                        category=cat,
+                        source_file=rel_path,
+                        instructions=f"Tanım: {kind} {name}() | Dosya: {rel_path} (Satır {line_start})" + (f"\nAçıklama: {doc}" if doc else ""),
+                        target_file=rel_path,
+                        target_line=f"Satır {line_start}",
+                        code_diff=snippet,
+                        test_cmd=f"python -m py_compile {rel_path}",
+                        presentation="",
+                        full_content=snippet + " " + doc
+                    )
+                    items.append(item)
+        except Exception:
+            # AST başarısız olursa regex fallback
+            for i, line in enumerate(lines):
+                m = re.match(r'^(?:async\s+)?(def|class)\s+([a-zA-Z0-9_]+)', line.strip())
+                if m:
+                    kind, name = m.group(1), m.group(2)
+                    snippet = "\n".join(lines[i : min(len(lines), i + 20)])
+                    items.append(DocItem(
+                        item_id=f"CODE-{path.stem}-{name}-L{i+1}",
+                        title=f"{rel_path}: {kind} {name}",
+                        category=cat,
+                        source_file=rel_path,
+                        instructions=f"{kind} {name} (Satır {i+1})",
+                        target_file=rel_path,
+                        target_line=f"Satır {i+1}",
+                        code_diff=snippet,
+                        test_cmd=f"python -m py_compile {rel_path}",
+                        presentation="",
+                        full_content=snippet
+                    ))
+        return items
+
+    def _parse_yaml_config(self, path: Path):
+        items = []
+        try:
+            rel_path = str(path.relative_to(self.base_dir)).replace("\\", "/")
+            content = path.read_text(encoding="utf-8", errors="ignore")
+            lines = content.splitlines()
+        except Exception:
+            return items
+
+        curr_section = None
+        curr_lines = []
+        start_line = 1
+
+        for i, line in enumerate(lines):
+            m = re.match(r'^([a-zA-Z0-9_]+)\s*:', line)
+            if m and not line.startswith(" "):
+                if curr_section and curr_lines:
+                    snippet = "\n".join(curr_lines[:30])
+                    items.append(DocItem(
+                        item_id=f"CONF-{path.stem}-{curr_section}-L{start_line}",
+                        title=f"{rel_path}: [{curr_section}] Parametre Bloğu",
+                        category="Konfigürasyon (YAML)",
+                        source_file=rel_path,
+                        instructions=f"{rel_path} içerisindeki '{curr_section}' ayar bloğu (Satır {start_line})",
+                        target_file=rel_path,
+                        target_line=f"Satır {start_line}",
+                        code_diff=snippet,
+                        test_cmd="",
+                        presentation="",
+                        full_content=snippet
+                    ))
+                curr_section = m.group(1)
+                curr_lines = [line]
+                start_line = i + 1
+            else:
+                if curr_section:
+                    curr_lines.append(line)
+
+        if curr_section and curr_lines:
+            snippet = "\n".join(curr_lines[:30])
+            items.append(DocItem(
+                item_id=f"CONF-{path.stem}-{curr_section}-L{start_line}",
+                title=f"{rel_path}: [{curr_section}] Parametre Bloğu",
+                category="Konfigürasyon (YAML)",
+                source_file=rel_path,
+                instructions=f"{rel_path} içerisindeki '{curr_section}' ayar bloğu (Satır {start_line})",
+                target_file=rel_path,
+                target_line=f"Satır {start_line}",
+                code_diff=snippet,
+                test_cmd="",
+                presentation="",
+                full_content=snippet
+            ))
+
         return items
 
 # ==============================================================================
@@ -611,6 +764,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .badge-kilavuz { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
         .badge-file { background: rgba(148, 163, 184, 0.1); color: #cbd5e1; font-family: monospace; }
         .badge-score { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+        .badge-code { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+        .badge-conf { background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3); }
 
         .card-title { font-size: 16px; font-weight: 700; color: #fff; line-height: 1.4; }
         
@@ -720,7 +875,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <button class="tab-btn" onclick="setCategory('Revizyon')">🚨 Revizyon Bankası (34)</button>
             <button class="tab-btn" onclick="setCategory('Hakem')">🗣️ Hakem Soruları</button>
             <button class="tab-btn" onclick="setCategory('Kılavuz')">📘 Kılavuz & Donanım</button>
-            <button class="tab-btn" onclick="setCategory('Şartname')">📋 Şartname & Proje</button>
+            <button class="tab-btn" onclick="setCategory('Şartname')">📋 Şartname</button>
+            <button class="tab-btn" onclick="setCategory('Kaynak Kod')">💻 Kaynak Kod (Python)</button>
+            <button class="tab-btn" onclick="setCategory('Konfigürasyon')">⚙️ YAML Parametreleri</button>
         </div>
 
         <!-- QUICK PILLS -->
@@ -728,10 +885,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <span>Hızlı Arama:</span>
             <span class="tag-pill" onclick="quickSearch('mavi küp ıskarta')">mavi küp ıskarta</span>
             <span class="tag-pill" onclick="quickSearch('viraj hız düşür')">viraj hız düşür</span>
+            <span class="tag-pill" onclick="quickSearch('camera exposure')">camera exposure (kod)</span>
+            <span class="tag-pill" onclick="quickSearch('pid osilasyon')">pid osilasyon</span>
+            <span class="tag-pill" onclick="quickSearch('renk_algila')">renk_algila (fonksiyon)</span>
             <span class="tag-pill" onclick="quickSearch('mqtt topic')">mqtt topic</span>
             <span class="tag-pill" onclick="quickSearch('plc sayaç duruş')">plc sayaç duruş</span>
-            <span class="tag-pill" onclick="quickSearch('trafik lambası arıza')">trafik lambası arıza</span>
-            <span class="tag-pill" onclick="quickSearch('pid osilasyon')">pid osilasyon</span>
         </div>
 
         <!-- META -->
@@ -823,6 +981,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 if (item.category.includes("Hakem")) badgeClass = "badge-hakem";
                 else if (item.category.includes("Kılavuz")) badgeClass = "badge-kilavuz";
                 else if (item.category.includes("Şartname")) badgeClass = "badge-score";
+                else if (item.category.includes("Kaynak Kod")) badgeClass = "badge-code";
+                else if (item.category.includes("Konfigürasyon")) badgeClass = "badge-conf";
 
                 let html = `
                 <div class="card ${isTop ? 'top-hit' : ''}">
