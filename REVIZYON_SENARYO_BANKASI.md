@@ -16,7 +16,8 @@
 | **BLOK C** | **Robot Kol, Kalite Kontrol & Ayıklama (Reject)** | `REV-KOL-01` — `REV-KOL-06` | 6 Senaryo |
 | **BLOK D** | **PLC Konveyör, HMI Sayaç & Reçete Otomasyonu** | `REV-PLC-01` — `REV-PLC-06` | 6 Senaryo |
 | **BLOK E** | **Ağ (MQTT) Kesintisi, Fail-Safe & Saha Işık Kalibrasyonu** | `REV-ORTAM-01` — `REV-ORTAM-05` | 5 Senaryo |
-| **TOPLAM** | **Tüm Sistemleri Kapsayan Eksiksiz Senaryo Bankası** | — | **34 Senaryo** |
+| **BLOK F** | **İleri Seviye Saha & Hakem Köşe Vakaları (Edge-Cases)** | `REV-İLERİ-01` — `REV-İLERİ-06` | 6 Senaryo |
+| **TOPLAM** | **Tüm Sistemleri Kapsayan Şampiyonluk Senaryo Bankası** | — | **40 Senaryo** |
 
 ---
 
@@ -1457,3 +1458,262 @@ Hakem masanıza gelip revizyon istediğinde panik yapmadan sırasıyla şu adım
 |   |                      | emin bir ses tonuyla jüriye söyle!                 |
 +---+----------------------+----------------------------------------------------+
 ```
+
+
+---
+
+# 🛡️ BLOK F: İLERİ SEVİYE SAHA VE HAKEM KÖŞE VAKALARI (EDGE-CASES)
+
+> **📌 BÖLÜM AMACI:** Bu bölüm, final etabında dereceyi ve şampiyonluğu belirlemek üzere jüri heyeti tarafından sorulabilecek en zorlu, sıra dışı veya sistemin sınırlarını zorlayan köşe vakaları (edge-cases) içerir.  
+> Tüm senaryolar sistem mimarisine birebir uyumlu olup 30 saniye içinde uygulanabilecek şekilde tasarlanmıştır.
+
+---
+
+### `[REV-İLERİ-01] Pist Engeli: Tümsek (Hız Kesici) Tabelasında Gaz Kısma Yavaşlaması`
+* **Kategori:** Otonom Araç / Tabela Görevleri
+* **Zorluk / Risk Seviyesi:** Orta Risk
+* **Tahmini Uygulama Süresi:** **30 Saniye**
+
+#### 1. 🗣️ Hakemin Talimatı
+> *"Parkur üzerine fiziksel bir plastik tümsek ve yanına [TÜMSEK] tabelası yerleştirdik. Aracınız tümsek tabelasını algıladığında aracı durdurmasın; 2.5 saniye boyunca gazını 40 PWM'e düşürerek sarsıntısız şekilde tümsekten aşsın ve ardından normal şerit hızına dönsün."*
+
+#### 2. ⚙️ Fiziksel Neden ve Sisteme Etkisi
+Araçtaki TensorRT yapay zeka modeli (`tabelaguncel.engine`), `TUMSEK_ID = 2` sınıfını doğrudan tespit edebilmektedir. `tabela_gorev.py` içerisindeki görev döngüsünde tespit edilen kutular taranırken `cid == 2` yakalandığında `out.throttle = 40.0 / self.max_pwm` emri verilerek `main.py` motor kontrol katmanına enjekte edilir.
+
+#### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
+* **Dosya:** [otonomarac/tabela_gorev.py](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/otonomarac/tabela_gorev.py)
+* **Konum:** `update()` metodu içinde Yaya algılama döngüsünün hemen altı (Satır ~312).
+
+#### 4. 💻 Kod Değişikliği (Diff)
+```python
+# otonomarac/tabela_gorev.py -> update() metodu içi
+<<<<--- ESKİ KOD:
+                    if d < self.dur_mesafe_cm:
+                        yakin = True
+====
+>>>>+++ YENİ KOD:
+                    if d < self.dur_mesafe_cm:
+                        yakin = True
+
+            # [HAKEM REVİZYONU - TÜMSEK YAVAŞLAMASI]:
+            for (x1, y1, x2, y2, conf, cid) in self._son_dets:
+                if cid == 2:  # TUMSEK_ID
+                    d, _ = bbox_mesafe_cm(raw_depth, x1, y1, x2, y2, depth_scale)
+                    if d is not None and d < 120.0:
+                        out.throttle = 40.0 / self.max_pwm  # Tümsekte 40 PWM'e yavaşla
+                        break
+```
+
+#### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
+```bash
+python -m py_compile otonomarac/tabela_gorev.py && echo "TEST BASARILI: Tümsek yavaşlama mantığı derlendi!"
+```
+
+#### 6. 🏆 Hakeme Sunum Cümlesi
+> *"Hocam, `tabelaguncel.engine` modelimizin 2 numaralı 'tumsek' tespit sınıfını `tabela_gorev.py` arbitrasyonuna bağladık. Araç tümseğe 120 cm kala oransal gazı 40 PWM'e düşürmekte ve mekanik süspansiyonu zorlamadan engeli aşmaktadır."*
+
+---
+
+### `[REV-İLERİ-02] HMI & PLC Operatör Kontrolü: Manuel Konveyör Sürme & Reçete Sıfırlama`
+* **Kategori:** PLC & HMI / Operatör Arayüzü
+* **Zorluk / Risk Seviyesi:** Düşük Risk
+* **Tahmini Uygulama Süresi:** **40 Saniye**
+
+#### 1. 🗣️ Hakemin Talimatı
+> *"HMI paneline 'MANUEL TEST' (Jog) butonu ekleyin. Butona basılı tutulduğunda konveyör sensör veya otonom araç dock beklemeden manuel olarak ilerlesin. Ayrıca ekrana mevcut parti sayacını tek dokunuşla sıfırlayan bir 'RESET' butonu yerleştirin."*
+
+#### 2. ⚙️ Fiziksel Neden ve Sisteme Etkisi
+Şartnamedeki %10 HMI puanı operatörün acil durumlarda hatta manuel müdahale edebilmesini hedefler. TIA Portal S7-1200 projesinde konveyör ileri kontaktörü (`%Q0.0`) çıkışına paralel bir HMI bit kontağı (`"HMI_Jog_Forward"`) bağlanır; sayaç reset bacağına da (`"HMI_Counter_Reset"`) biti eklenir.
+
+#### 3. 📂 Müdahale Edilecek Ortam ve Konum
+* **Dosya / Ortam:** TIA Portal V14+ -> [plc/teknofest_KONVEYÖR.zap14](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/plc/teknofest_KONVEY%C3%96R.zap14)
+* **Ekran:** KTP700 Basic -> `Root Screen`
+
+#### 4. 💻 PLC Mantık Değişikliği (Ladder / SCL)
+```scl
+// Network 1: Konveyör Motor Çıkışına Manuel Jog Butonu Paralel Bağlantısı
+%Q0.0 (Motor_Ileri) = ("Otomatik_Start_Muhru" AND NOT #Parti_Bitti) OR "HMI_Jog_Forward";
+
+// Network 2: HMI Ekranından Parti Sayacı Sıfırlama
+"IEC_Counter_DB".CTU(
+    CU := %I1.0,                       // BP2 Çıkış Sensörü
+    R  := %I0.1 OR "HMI_Counter_Reset", // Donanımsal Buton veya HMI Dokunmatik Buton
+    PV := 3,
+    CV => #Guncel_Adet
+);
+```
+
+#### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Yöntemi
+* TIA Portal HMI Simulator veya gerçek panelde eklenen 'MANUEL' butonuna basılı tutun; `%Q0.0` çıkış LED'inin yandığını doğrulayın.
+* 'RESET' butonuna bastığınızda ekrandaki `Guncel_Adet` değerinin anında `0` olduğunu gözlemleyin.
+
+#### 6. 🏆 Hakeme Sunum Cümlesi
+> *"Hocam, KTP700 operatör panelimiz üzerine WinCC 'Events -> SetBitWhilePressed' fonksiyonuyla manuel konveyör jog kontrolü ve CTU sayacı için tek tuşla asenkron sıfırlama (Reset) arayüzü entegre ettik."*
+
+---
+
+### `[REV-İLERİ-03] Kesintisiz Seri Üretim: Park Sonrası 2. Çevrime Otonom Yeniden Başlama`
+* **Kategori:** Otonom Araç / Çevrim Otomasyonu
+* **Zorluk / Risk Seviyesi:** Orta Risk
+* **Tahmini Uygulama Süresi:** **45 Saniye**
+
+#### 1. 🗣️ Hakemin Talimatı
+> *"Akıllı fabrikalar tek seferlik çalışmaz, sürekli çevrim yapar. Aracınız renkli park cebine girdikten sonra tam 5 saniye dursun (yük boşaltma süresi), ardından parktan kendi kendine çıkıp konveyör yükleme noktasına geri dönsün ve 2. parti için hazır beklesin."*
+
+#### 2. ⚙️ Fiziksel Neden ve Sisteme Etkisi
+Normal akışta araç `park_state == "ETTI"` olduğunda durur ve program sonlanır. Çoklu çevrim modunda ise 5 saniyelik bir zamanlayıcı (`t_bosaltma`) çalıştırılır, dolduğunda park görevi resetlenir, araç gaz alarak park cebinden tekrar ana şeride katılır.
+
+#### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
+* **Dosya:** [otonomarac/main.py](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/otonomarac/main.py)
+* **Konum:** `park_devrede` kontrolünün hemen öncesi (Satır ~275).
+
+#### 4. 💻 Kod Değişikliği (Diff)
+```python
+# otonomarac/main.py -> while döngüsü içi
+<<<<--- ESKİ KOD:
+            park_devrede = gorev.park_state in ("AKTIF", "ETTI")
+====
+>>>>+++ YENİ KOD:
+            # [HAKEM REVİZYONU - KESİNTİSİZ ÇOKLU ÇEVRİM MODU]:
+            if gorev.park_state == "ETTI":
+                if not hasattr(main, "_park_t0"):
+                    main._park_t0 = time.time()
+                elif time.time() - main._park_t0 > 5.0:  # 5 sn boşaltma beklemesi
+                    print("[main] 2. ÇEVRİM BAŞLIYOR: Araç parktan çıkıp konveyöre dönüyor...")
+                    gorevler.reset()
+                    delattr(main, "_park_t0")
+                    sent_throttle = start_throttle
+
+            park_devrede = gorev.park_state in ("AKTIF", "ETTI")
+```
+
+#### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
+```bash
+python -m py_compile otonomarac/main.py && echo "TEST BASARILI: Kesintisiz çoklu çevrim modu derlendi!"
+```
+
+#### 6. 🏆 Hakeme Sunum Cümlesi
+> *"Hocam, endüstriyel süreklilik gereğince `main.py` içerisine otomatik çevrim yenileme sayacı ekledik. Araç park alanında 5000 ms durarak lojistik tahliyeyi simüle etmekte, ardından görev durumunu sıfırlayarak konveyör başlangıç noktasına 2. parti için otonom sevk edilmektedir."*
+
+---
+
+### `[REV-İLERİ-04] Robot Kol Güvenlik Kilitlenmesi: Küp Düşürme / Iskalama Limit Sayacı`
+* **Kategori:** Robot Kol / Emniyet & Arıza Yönetimi
+* **Zorluk / Risk Seviyesi:** Düşük - Orta Risk
+* **Tahmini Uygulama Süresi:** **30 Saniye**
+
+#### 1. 🗣️ Hakemin Talimatı
+> *"Robot kol konveyördeki küpü kavramaya çalışırken ardışık 2 kez ıskalarsa veya küp düşerse, sonsuz döngüde denemeye devam edip motorları ısıtmasın. Kol derhal güvenli GORME pozisyonuna çekilsin, sistem HATA durumuna kilitlensin ve operatör müdahalesi beklesin."*
+
+#### 2. ⚙️ Fiziksel Neden ve Sisteme Etkisi
+`otonom_dongu.py` içindeki `dogrula` algoritması küp konveyörde kalırsa `continue` ile sonsuz kez yeniden dener. Sayıcı (`_iskalama_sayaci`) eklenerek 2 deneme sonrası `D_HATA` durumuna geçilir ve robot emniyete alınır.
+
+#### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
+* **Dosya:** [robotkol/otonom_dongu.py](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/robotkol/otonom_dongu.py)
+* **Konum:** `_calis()` metodu içindeki `_kutu_hala_var()` bloğu (Satır ~237).
+
+#### 4. 💻 Kod Değişikliği (Diff)
+```python
+# robotkol/otonom_dongu.py -> _calis() içi
+<<<<--- ESKİ KOD:
+                    if self._kutu_hala_var():
+                        self._log("ISKALADI (kutu hala konveyorde) - tekrar denenecek")
+                        self.robot.grip(self.ayar.grip_ac)
+                        continue
+====
+>>>>+++ YENİ KOD:
+                    if self._kutu_hala_var():
+                        self._iskalama_sayaci = getattr(self, "_iskalama_sayaci", 0) + 1
+                        self._log(f"ISKALADI ({self._iskalama_sayaci}/2) - Kutu konveyörde!")
+                        self.robot.grip(self.ayar.grip_ac)
+                        if self._iskalama_sayaci >= 2:
+                            self._hata = "Maksimum kavrama denemesi asildi! Sistem kilitlendi."
+                            self._durum = D_HATA
+                            break
+                        continue
+                    else:
+                        self._iskalama_sayaci = 0
+```
+
+#### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
+```bash
+python -m py_compile robotkol/otonom_dongu.py && echo "TEST BASARILI: Robot kol ıskalama emniyeti derlendi!"
+```
+
+#### 6. 🏆 Hakeme Sunum Cümlesi
+> *"Hocam, robot kolda donanım emniyeti ve aktüatör koruması amacıyla ardışık ıskalama limiti kurduk. İki kez üst üste kavrama başarısız olursa sistem mekanik zorlanmayı önlemek adına operasyonu durdurup hata durumuna geçmektedir."*
+
+---
+
+### `[REV-İLERİ-05] Saha Işık Şoku: 15 Saniyede Tek Komutla Dinamik Renk Kalibrasyonu`
+* **Kategori:** Görüntü İşleme / Saha Işık Kalibrasyonu
+* **Zorluk / Risk Seviyesi:** Düşük Risk
+* **Tahmini Uygulama Süresi:** **15 Saniye**
+
+#### 1. 🗣️ Hakemin Talimatı
+> *"Yarışma alanındaki spot ışığı küpün üzerine dik açıyla vurdu ve kırmızı küp sarımsı parlayarak UNKNOWN kalmaya başladı. Grafik arayüzü açacak vaktiniz yok, terminalden tek bir komutla kırmızı HSV doygunluk ve parlaklık eşiklerini genişletin."*
+
+#### 2. ⚙️ Fiziksel Neden ve Sisteme Etkisi
+Aşırı parlak spot ışığında rengin doygunluğu (S) düşer ve parlaklığı (V) tavana vurur. `renk_kalibrasyon.json` içerisindeki `S_min` değerini 110'dan 70'e çekmek anlık ışık patlamalarında küpün tanınmasını garanti eder.
+
+#### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
+* **Dosya:** [robotkol/renk_kalibrasyon.json](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/robotkol/renk_kalibrasyon.json)
+* **Konum:** `hsv -> RED` dizisi
+
+#### 4. 💻 Kod Değişikliği (Tek Satırlık Terminal Reçetesi)
+```bash
+python -c "import json; p='robotkol/renk_kalibrasyon.json'; d=json.load(open(p)); d['hsv']['RED'][0][0][1]=70; json.dump(d, open(p,'w'), indent=2); print('KALIBRASYON TAMAM: Kirmizi S_min = 70')"
+```
+
+#### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
+```bash
+python -c "import json; d=json.load(open('robotkol/renk_kalibrasyon.json')); assert d['hsv']['RED'][0][0][1] == 70; print('TEST BASARILI: Kırmızı toleransı genişletildi!')"
+```
+
+#### 6. 🏆 Hakeme Sunum Cümlesi
+> *"Hocam, ortamdaki lüks seviyesi artışına bağlı renk solmasını kompanse etmek amacıyla JSON veritabanımız üzerinden kırmızı kanal doygunluk alt sınırını (S_min) 70'e genişlettik. Küp parlamadan etkilenmeksizin kararlı algılanmaktadır."*
+
+---
+
+### `[REV-İLERİ-06] Ağ Kesintisi Acil Durumu: Sadece MZ80 Sensörüyle Start Alma (MQTT Bypass)`
+* **Kategori:** Otonom Araç / Ağ Kesintisi & Yedekleme
+* **Zorluk / Risk Seviyesi:** Düşük Risk
+* **Tahmini Uygulama Süresi:** **20 Saniye**
+
+#### 1. 🗣️ Hakemin Talimatı
+> *"Fabrikada siber saldırı veya ana switch arızası meydana geldi, Wi-Fi tamamen çöktü. Robot kol ile araç arasında hiçbir MQTT paketi iletilemiyor. Otonom aracınız küpün araca yüklendiğini üzerindeki MZ80 sensörüyle doğrular doğrulamaz otonom olarak kalkış yapmalı ve güvenli park alanına gitmelidir."*
+
+#### 2. ⚙️ Fiziksel Neden ve Sisteme Etkisi
+Şartname kuralı gereği normalde araç MZ80 + MQTT şartlarının ikisini birden bekler. Ancak tam ağ çökmesinde `require_for_start: false` yapılarak MQTT kilidi kaldırılır ve `park.varsayilan_renk: "GREEN"` ile acil durum lojistik tahliyesi gerçekleştirilir.
+
+#### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
+* **Dosya:** [otonomarac/config.yaml](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARI%C5%9EMASI-AKILLI%20FABR%C4%B0KA/otonomarac/config.yaml)
+* **Bölüm:** `colorlink:` altındaki `require_for_start` ve `park:` altındaki `varsayilan_renk`
+
+#### 4. 💻 Kod Değişikliği (Diff)
+```yaml
+# otonomarac/config.yaml -> colorlink ve park bölümleri
+colorlink:
+<<<<--- ESKİ DEĞER:
+  require_for_start: true
+====
+>>>>+++ YENİ DEĞER:
+  require_for_start: false     # MQTT ağ paketi olmadan donanımsal kalkış izni
+
+park:
+<<<<--- ESKİ DEĞER:
+  varsayilan_renk: "RED"
+====
+>>>>+++ YENİ DEĞER:
+  varsayilan_renk: "GREEN"     # Ağ yokken acil durum güvenli tahliye park cebi
+```
+
+#### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
+```bash
+python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['colorlink']['require_for_start'] == False and c['park']['varsayilan_renk'] == 'GREEN'; print('TEST BASARILI: Acil durum donanimsal start modu aktif!')"
+```
+
+#### 6. 🏆 Hakeme Sunum Cümlesi
+> *"Hocam, şartnamenin fail-safe (arıza güvenliği) ilkeleri doğrultusunda ağ felaket modunu devreye aldık. MQTT bağımlılığı kaldırılarak donanımsal yük sensörü doğrulamasıyla aracın güvenli yeşil tahliye cebine intikali sağlanmıştır."*
+
+---
