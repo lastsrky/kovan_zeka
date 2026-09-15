@@ -60,6 +60,8 @@
                 # ==========================================================
                 # [HAKEM REVİZYONU - MAVİ KÜPÜ ISKARTAYA AYIR]:
                 # ==========================================================
+                # Not: D_RENK aşamasında araca MAVİ bilgisi gitmemesi için:
+                # if renk != "BLUE" and self.mqtt is not None and self.mqtt.renk_gonder(renk): ...
                 if renk == "BLUE":
                     self._log("⚠️ MAVİ KÜP: Kusurlu parça tespit edildi! Iskarta alanına tahliye ediliyor...")
                     # 1. Omuzu yukarı kaldır (Bariyere çarpmamak için)
@@ -117,46 +119,38 @@ python -m py_compile robotkol/otonom_dongu.py && echo "TEST BASARILI: Iskarta ma
 
 **1. Robot Kol Tarafı (`robotkol/arac_haberlesme.py`):**
 ```python
+# robotkol/arac_haberlesme.py -> Başlık ve yuk_gonder fonksiyonu
 <<<<--- ESKİ KOD:
-TOPIC_YUK = "arac/yuk"
+TOPIC_YUK   = "arac/yuk"
 ...
-def renk_gonder(self, renk: str) -> bool:
-    return self.yayinla(TOPIC_YUK, str(renk).strip().upper())
+    def yuk_gonder(self, renk: str) -> bool:
+        return self.yayinla(TOPIC_YUK, renk, qos=1, retain=True)
 ====
 >>>>+++ YENİ KOD:
 import json
-TOPIC_YUK = "fabrika/palet"
+TOPIC_YUK   = "fabrika/palet"
 ...
-def renk_gonder(self, renk: str) -> bool:
-    payload = json.dumps({"renk": str(renk).strip().upper()})
-    return self.yayinla(TOPIC_YUK, payload)
+    def yuk_gonder(self, renk: str) -> bool:
+        payload = json.dumps({"renk": str(renk).strip().upper()})
+        return self.yayinla(TOPIC_YUK, payload, qos=1, retain=True)
 ```
 
-**2. Otonom Araç Tarafı (`otonomarac/colorlink.py`):**
-```python
-<<<<--- ESKİ KOD:
-TOPIC_YUK = "arac/yuk"
-...
-def _on_message(self, client, userdata, msg):
-    payload = msg.payload.decode("utf-8", errors="ignore").strip().upper()
-    self._renk = payload
+**2. Otonom Araç Tarafı (`otonomarac/config.yaml`):**
+> 💡 **ÖNEMLİ SAHA NOTU:** `colorlink.py` sınıfı mimari olarak gelen JSON paketlerini zaten kendi içinde (`json.loads`) otomatik olarak çözümler ve `BASLA` sinyali ile iş parçacığı kilidini (`self._lock`) yönetir. Python kodundaki `_on_message` metodunu manuel ezmek start mekanizmasını bozar. Bu nedenle araç tarafında Python koduna dokunulmaz; yalnızca `config.yaml` içinde dinlenen topic güncellenir:
+```yaml
+# otonomarac/config.yaml -> colorlink bölümü
+colorlink:
+  enable: true
+<<<<--- ESKİ DEĞER:
+  topic: "robot/veri"
 ====
->>>>+++ YENİ KOD:
-import json
-TOPIC_YUK = "fabrika/palet"
-...
-def _on_message(self, client, userdata, msg):
-    raw = msg.payload.decode("utf-8", errors="ignore").strip()
-    try:
-        data = json.loads(raw)
-        self._renk = str(data.get("renk", "")).upper()
-    except Exception:
-        self._renk = raw.upper()
+>>>>+++ YENİ DEĞER:
+  topic: "fabrika/palet"   # Hakemin talep ettiği yeni topic adı
 ```
 
 #### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
 ```bash
-python -c "import json; d=json.loads(json.dumps({'renk': 'RED'})); assert d['renk']=='RED'; print('TEST BASARILI: JSON MQTT Protokolü Uyumlu!')"
+python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['colorlink']['topic']=='fabrika/palet'; print('TEST BASARILI: fabrika/palet konusu otonom araca tanimlandi!')"
 ```
 
 #### 6. 🏆 Hakeme Sunum Cümlesi
@@ -358,7 +352,7 @@ python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding
 ```yaml
 # otonomarac/config.yaml -> yaya bölümü
 yaya:
-  enabled: true
+  enable: true
 <<<<--- ESKİ DEĞER:
   dur_s: 3.0
 ====
@@ -397,7 +391,7 @@ Yaya geçidinde durulduktan sonra beyaz zebra çizgileri şerit algoritmasını 
 yaya:
 <<<<--- ESKİ DEĞER:
   gec_pwm: 85
-  gec_s: 2.8
+  gec_s: 3.0
 ====
 >>>>+++ YENİ DEĞER:
   gec_pwm: 110
@@ -502,23 +496,24 @@ python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding
 Fiziksel rot kollarındaki mikrometre farkları aracın tek bir yöne çekmesine yol açar. `controller.center_trim` parametresi servo merkezine sabit bir ofset ekleyerek mekanik hatayı yazılımla sıfırlar (Negatif değer = Sola, Pozitif değer = Sağa).
 
 #### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
-* **Dosya:** [otonomarac/config.yaml](file:///c:/Users/user/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARIŞMASI-AKILLI%20FABRİKA/otonomarac/config.yaml)
-* **Bölüm:** `controller:` altındaki `center_trim`
+* **Dosya:** [otonomarac/config.yaml](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARIŞMASI-AKILLI%20FABRİKA/otonomarac/config.yaml)
+* **Bölüm:** `motor:` altındaki `steering_center`
 
 #### 4. 💻 Kod Değişikliği (Diff)
+> 💡 **ÖNEMLİ TEKNİK NOT:** `motor.py` sürücüsü direksiyon açısını doğrudan `motor.steering_center` (varsayılan 110 derece) üzerinden okur. `controller` altında trim aramak yerine motor merkez açısını sola doğru 4 derece kaydırmak donanımsal düzeltmeyi kesin olarak sağlar:
 ```yaml
-# otonomarac/config.yaml -> controller bölümü
-controller:
+# otonomarac/config.yaml -> motor bölümü
+motor:
 <<<<--- ESKİ DEĞER:
-  center_trim: 0.0
+  steering_center: 110
 ====
 >>>>+++ YENİ DEĞER:
-  center_trim: -3.5   # Sağa çekmeyi düzeltmek için sola 3.5 derece trim
+  steering_center: 106   # Sağa çekmeyi sıfırlamak için sola 4 derece trim
 ```
 
 #### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
 ```bash
-python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['controller']['center_trim'] == -3.5; print('TEST BASARILI: center_trim -3.5 derece yapıldı!')"
+python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['motor']['steering_center'] == 106; print('TEST BASARILI: steering_center 106 derece olarak trimlendi!')"
 ```
 
 #### 6. 🏆 Hakeme Sunum Cümlesi
@@ -659,25 +654,25 @@ python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding
 `overtake.py` kontrolcüsü `kutu_mesafe_cm` altındaki derinlik değerlerinde şerit kaydırmayı başlatır. Mesafe 120 cm yapıldığında ve `sol_kalma_s` artırıldığında araç engeli çok daha geniş bir yayla güvenle sollar.
 
 #### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
-* **Dosya:** [otonomarac/config.yaml](file:///c:/Users/user/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARIŞMASI-AKILLI%20FABRİKA/otonomarac/config.yaml)
-* **Bölüm:** `overtake:` altındaki `kutu_mesafe_cm` ve `sol_kalma_s`
+* **Dosya:** [otonomarac/config.yaml](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARIŞMASI-AKILLI%20FABRİKA/otonomarac/config.yaml)
+* **Bölüm:** `overtake:` altındaki `trigger_distance_cm` ve `settle_s`
 
 #### 4. 💻 Kod Değişikliği (Diff)
 ```yaml
 # otonomarac/config.yaml -> overtake bölümü
 overtake:
-<<<<--- ESKİ DEĞER:
-  kutu_mesafe_cm: 80.0
-  sol_kalma_s: 3.5
+<<<<--- ESKİ DEĞERLER:
+  trigger_distance_cm: 110.0
+  settle_s: 0.6
 ====
->>>>+++ YENİ DEĞER:
-  kutu_mesafe_cm: 120.0
-  sol_kalma_s: 5.0
+>>>>+++ YENİ DEĞERLER:
+  trigger_distance_cm: 140.0   # Engeli 140 cm mesafeden erken algılayıp manevraya başla
+  settle_s: 2.5                # Sol şeritte daha uzun süre kalarak güvenli sollama yap
 ```
 
 #### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
 ```bash
-python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['overtake']['kutu_mesafe_cm'] == 120.0; print('TEST BASARILI: Sollama mesafesi 120 cm yapıldı!')"
+python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['overtake']['trigger_distance_cm'] == 140.0; print('TEST BASARILI: Sollama tetikleme mesafesi 140 cm yapildi!')"
 ```
 
 #### 6. 🏆 Hakeme Sunum Cümlesi
@@ -697,25 +692,25 @@ python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding
 Park durum makinesinde `stop_dist_cm` eşiği, kameranın zemin lekesine olan mesafesini kontrol eder. Eşik çok büyükse araç erken durur; eşik 22 cm'ye düşürülüp yaklaşma gücü ayarlandığında araç cebe tam oturur.
 
 #### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
-* **Dosya:** [otonomarac/config.yaml](file:///c:/Users/user/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARIŞMASI-AKILLI%20FABRİKA/otonomarac/config.yaml)
-* **Bölüm:** `park:` altındaki `stop_dist_cm` ve `approach_pwm`
+* **Dosya:** [otonomarac/config.yaml](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARIŞMASI-AKILLI%20FABRİKA/otonomarac/config.yaml)
+* **Bölüm:** `park:` altındaki `dur_mesafe_cm` ve `park_pwm`
 
 #### 4. 💻 Kod Değişikliği (Diff)
 ```yaml
 # otonomarac/config.yaml -> park bölümü
 park:
-<<<<--- ESKİ DEĞER:
-  stop_dist_cm: 45.0
-  approach_pwm: 80
+<<<<--- ESKİ DEĞERLER:
+  dur_mesafe_cm: 25.0
+  park_pwm: 80
 ====
->>>>+++ YENİ DEĞER:
-  stop_dist_cm: 22.0
-  approach_pwm: 70
+>>>>+++ YENİ DEĞERLER:
+  dur_mesafe_cm: 15.0          # Zemindeki renkli alana daha çok yaklaşarak duruş yap
+  park_pwm: 65.0               # Park alanına yanaşma hassas PWM gücü
 ```
 
 #### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
 ```bash
-python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['park']['stop_dist_cm'] == 22.0; print('TEST BASARILI: Park durus mesafesi 22 cm!')"
+python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['park']['dur_mesafe_cm'] == 15.0; print('TEST BASARILI: Park durus mesafesi 15 cm yapildi!')"
 ```
 
 #### 6. 🏆 Hakeme Sunum Cümlesi
@@ -735,23 +730,24 @@ python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding
 TensorRT modeli hız tabelasını algıladığında `tabela_gorev.py` üzerinden ana döngüye bir hız sınırlayıcı çarpan iletilir.
 
 #### 3. 📂 Müdahale Edilecek Dosya ve Tam Konum
-* **Dosya:** [otonomarac/config.yaml](file:///c:/Users/user/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARIŞMASI-AKILLI%20FABRİKA/otonomarac/config.yaml)
-* **Bölüm:** `speed:` altındaki `speed_limit_scale`
+* **Dosya:** [otonomarac/config.yaml](file:///c:/Users/bakit/OneDrive/Desktop/TEKNOFEST%20MESLEK%C4%B0%20YETENEK%20YARIŞMASI-AKILLI%20FABRİKA/otonomarac/config.yaml)
+* **Bölüm:** `run:` altındaki `default_throttle` (ve `speed.speed_gain`)
 
 #### 4. 💻 Kod Değişikliği (Diff)
+> 💡 **ÖNEMLİ MODEL NOTU:** Pistteki TensorRT yapay zeka modeli (`tabelaguncel.engine`) yalnızca `yaya`, `hemzemin`, `tumsek`, `cikmaz_sokak`, `sollama_yasagi_sonu` ve `park` sınıflarını tanır; sayısal hız tabelası (30/50) sınıfı modelde yer almaz. Hakem heyeti hız sınırı istediğinde, aracın hız tavanı doğrudan ana gaz parametresinden kısılarak pist hızına uyarlanır:
 ```yaml
-# otonomarac/config.yaml -> speed bölümü
-speed:
+# otonomarac/config.yaml -> run bölümü
+run:
 <<<<--- ESKİ DEĞER:
-  speed_limit_scale: 0.70
+  default_throttle: 70
 ====
 >>>>+++ YENİ DEĞER:
-  speed_limit_scale: 0.50
+  default_throttle: 45         # Hız sınırı için seyir gazı 70'ten 45 PWM'e kısıldı
 ```
 
 #### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
 ```bash
-python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['speed']['speed_limit_scale'] == 0.50; print('TEST BASARILI: Hız sınırı carpani 0.50 yapıldı!')"
+python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['run']['default_throttle'] == 45; print('TEST BASARILI: Hız sınırı için gaz 45 PWM olarak ayarlandı!')"
 ```
 
 #### 6. 🏆 Hakeme Sunum Cümlesi
@@ -1033,22 +1029,19 @@ python -c "import json; d=json.load(open('robotkol/konumlar.json')); assert d['Y
 ```python
 # simulator/core/plc_engine.py -> State 5: CYCLE_COMPLETE içinde
 <<<<--- ESKİ KOD:
-        elif self.state == 5:  # CYCLE_COMPLETE
+        elif self.state == STATE_CYCLE_COMPLETE:
+            # Register completed production cycle and loop back to READY
             self.cycle_count += 1
-            self.state = 1     # Otomatik READY'e dönüp devam eder
+            self.state = STATE_READY
 ====
 >>>>+++ YENİ KOD:
-        elif self.state == 5:  # CYCLE_COMPLETE
+        elif self.state == STATE_CYCLE_COMPLETE:
             self.cycle_count += 1
-            # [HAKEM REVİZYONU - 3 KÜP SONRA OTOMATİK STOP]:
             if self.cycle_count >= 3:
-                self.state = 0   # OFF durumuna geç (Sistemi durdur)
-                self.Q_CONVEYOR_MOTOR = False
-                self.Q_GREEN_LAMP = False
-                self.Q_RED_LAMP = True
-                print("[PLC] PARTİ TAMAMLANDI (3 Küp İşlendi) -> Sistem Durdu.")
+                self.state = STATE_OFF # Hedef partiye ulaşıldı, sistemi durdur
+                print("[PLC] 3 Parçalık Parti Tamamlandı! Konveyör Durduruldu.")
             else:
-                self.state = 1   # Devam et
+                self.state = STATE_READY   # Devam et
 ```
 
 #### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
@@ -1274,27 +1267,31 @@ python -m py_compile simulator/core/plc_engine.py && echo "TEST BASARILI: Flaş�
 * **Bölüm:** `colorlink:` altındaki `default_color`, `timeout_s`, `require_for_start`
 
 #### 4. 💻 Kod Değişikliği (Diff)
+> 💡 **ÖNEMLİ SAHA NOTU:** Sistem mimarisinde araç kalkış kilidi `colorlink.require_for_start` parametresiyle yönetilir; hedef renk ise `park.varsayilan_renk` üzerinden atanır. Ağ koptuğunda güvenli yeşil alana park etmek için iki blok senkronize edilir:
 ```yaml
-# otonomarac/config.yaml -> colorlink bölümü
+# otonomarac/config.yaml -> colorlink ve park bölümleri
 colorlink:
 <<<<--- ESKİ DEĞER:
   require_for_start: true
-  default_color: RED
-  timeout_s: 30.0
 ====
 >>>>+++ YENİ DEĞER:
-  require_for_start: false      # MQTT olmasa da kalkışa izin ver
-  default_color: GREEN          # Varsayılan renk YEŞİL yapıldı
-  timeout_s: 10.0               # 10 sn sonra zaman aşımı
+  require_for_start: false     # MQTT gelmese bile MZ80 algısıyla kalkışa izin ver
+
+park:
+<<<<--- ESKİ DEĞER:
+  varsayilan_renk: "RED"
+====
+>>>>+++ YENİ DEĞER:
+  varsayilan_renk: "GREEN"     # Ağ kesintisinde güvenli park rengi
 ```
 
 #### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
 ```bash
-python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['colorlink']['default_color'] == 'GREEN'; print('TEST BASARILI: default_color GREEN yapıldı!')"
+python -c "import yaml; c=yaml.safe_load(open('otonomarac/config.yaml', encoding='utf-8')); assert c['colorlink']['require_for_start']==False and c['park']['varsayilan_renk']=='GREEN'; print('TEST BASARILI: Ağ kesintisi emniyet modu aktif!')"
 ```
 
 #### 6. 🏆 Hakeme Sunum Cümlesi
-> *"Hocam, `colorlink.default_color` değerini GREEN olarak yapılandırıp `timeout_s` süresini 10 saniyeye çektik. Ağ bağlantısı kopsa dahi araç sistem kilitlenmesine (deadlock) düşmeden yeşil parka yönelecektir."*
+> *"Hocam, `colorlink.require_for_start` kilidini devre dışı bırakıp `park.varsayilan_renk` değerini GREEN yaptık. Ağ bağlantısı kopsa dahi araç sistem kilitlenmesine (deadlock) düşmeden güvenli yeşil parka yönelecektir."*
 
 ---
 
@@ -1389,12 +1386,12 @@ python -c "from otonomarac.park_zemin_renk import PARK_RENK_BANTLARI; assert PAR
 ```json
 // robotkol/renk_kalibrasyon.json
 <<<<--- ESKİ DEĞER:
-  "doluluk_esigi": 0.40,
-  "marj": 0.12,
+  "doluluk_esigi": 0.4,
+  "marj": 0.12
 ====
 >>>>+++ YENİ DEĞER:
   "doluluk_esigi": 0.25,
-  "marj": 0.08,
+  "marj": 0.08
 ```
 
 #### 5. ⏱️ 30 Saniyelik Hızlı Doğrulama Komutu
@@ -1427,7 +1424,7 @@ python -c "import json; d=json.load(open('robotkol/renk_kalibrasyon.json')); ass
 # otonomarac/config.yaml -> speed bölümü
 speed:
 <<<<--- ESKİ DEĞER:
-  lm_scale_kayip4: 0.70
+  lm_scale_kayip4: 0.75
 ====
 >>>>+++ YENİ DEĞER:
   lm_scale_kayip4: 0.30       # Şerit kaybolunca gaz %70 kesilir
