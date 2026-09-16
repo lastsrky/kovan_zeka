@@ -510,7 +510,12 @@ def build():
 
     out_path = BASE_DIR / "index.html"
     out_path.write_text(html_content, encoding="utf-8")
-    print(f"🚀 'index.html' başarıyla üretildi! Dosya boyutu: {out_path.stat().st_size / 1024:.1f} KB")
+
+    site_dir = BASE_DIR / "web_site"
+    site_dir.mkdir(exist_ok=True)
+    (site_dir / "index.html").write_text(html_content, encoding="utf-8")
+
+    print(f"🚀 'index.html' ve 'web_site/index.html' başarıyla üretildi! Dosya boyutu: {out_path.stat().st_size / 1024:.1f} KB")
 
 if __name__ == "__main__":
     build()
