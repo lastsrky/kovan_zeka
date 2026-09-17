@@ -231,6 +231,9 @@ class TabelaGorevleri(object):
         if not renk:
             return
         r = str(renk).strip().upper()
+        ters_harita = {"RED": "RED", "BLUE": "BLUE", "GREEN": "GREEN"}
+        r = ters_harita.get(r, r)
+
         if r not in PARK_RENK_BANTLARI:
             if not self._uyarildi_renk:
                 print("[park] UYARI: '{}' park rengi tanýnmýyor, {} "
